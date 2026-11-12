@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+
+# Datos y productos (se regeneran)
+outputs/
+docs/data_barras/
+docs/figures_barras/
+*.fits
+*.parquet
+
+# LaTeX
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+
+# No propios
+modelo/
+2409.00194v1.pdf

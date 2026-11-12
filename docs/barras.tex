@@ -1,0 +1,469 @@
+% Compilar: cd docs && latexmk -pdf barras.tex && latexmk -c
+% Figuras: scripts_barras/fig_*.py (astro-clean); cada cifra del texto sale de lo que imprimen.
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-noshorthands]{babel}
+\usepackage{amsmath}
+\usepackage[varg]{txfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[hidelinks]{hyperref}
+\decimalpoint
+
+\newcommand{\as}{\ensuremath{^{\prime\prime}}}
+\newcommand{\aeps}{a_\varepsilon}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{Medir el tamaño de una barra en DESI DR1\\[2pt]
+\large Isofotas, Fourier y descomposición 2D frente al método de Alonso et al. (2024)}
+\author{Frank Bautista}
+\date{12 de noviembre de 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Se explica cómo se mide el largo, el ancho y la orientación de una barra en las imágenes de DESI Legacy, sin
+aprendizaje automático. El largo y el ángulo salen del ajuste de isofotas (el radio donde la elipticidad es
+máxima); el ancho, de la descomposición de Fourier de la luz, que separa la barra (modo $m = 2$) de la luz
+redonda del bulbo y el disco ($m = 0$). Se compara con el método de Alonso et al. (2024), que fija un contorno
+de brillo a partir de cuatro puntos marcados a mano y entrena redes para imitarlos. En las 448 barras que midió
+Valeria, el largo por isofotas coincide con el suyo (mediana del cociente $1.01$, el 88\,\% a menos del 20\,\%),
+también en las 291 que no se usaron para ajustar el método. El ancho depende de la definición: el de las
+isofotas y el de Valeria incluyen el bulbo y coinciden ($0.97$); el de Fourier no lo incluye y es la mitad. Se
+documentan los errores encontrados por el camino, cómo se corrigieron y qué queda pendiente: barras de pocos
+segundos de arco, la deproyección y las máscaras.
+\end{abstract}
+
+\tableofcontents
+
+\section{Qué se quiere medir}\label{sec:problema}
+
+Una barra es una estructura alargada y recta en el centro de un disco. Se describe con tres números: su
+\textbf{semilargo} $a$ (del centro a la punta), su \textbf{semiancho} $b$ y su \textbf{ángulo de posición} PA.
+El largo total es $L = 2a$ y el ancho $W = 2b$. Su forma se resume con la elipticidad
+\begin{equation}
+\varepsilon_{\rm bar} = 1 - \frac{b}{a}.
+\end{equation}
+
+\subsection{De segundos de arco a kpc}
+
+En la imagen se mide un ángulo $\theta$. Su tamaño físico, \emph{proyectado sobre el plano del cielo}, es
+\begin{equation}\label{eq:kpc}
+L\,[\mathrm{kpc}] = D_A(z)\,\theta = \frac{D_M(z)}{1+z}\,\theta,
+\qquad
+D_M(z) = \frac{c}{H_0}\int_0^{z}\frac{dz'}{E(z')},\quad E(z) = \sqrt{\Omega_m(1+z)^3 + \Omega_\Lambda},
+\end{equation}
+con $\theta$ en radianes ($1\as = 4.848\times10^{-6}$\,rad) y la cosmología Planck18. Es la misma conversión
+que la separación proyectada de un par de galaxias,
+\begin{equation}\label{eq:rp}
+r_p = \frac{D_M(\bar z)\,\theta}{1+\bar z},
+\end{equation}
+donde $\theta$ es la separación angular de los dos miembros. Para la galaxia ejemplo
+($z = 0.039$) la escala es $0.807$\,kpc por segundo de arco.
+
+\subsection{Proyectado y deproyectado}
+
+Lo que se pierde al proyectar es distinto en los dos casos. En un par, la separación a lo largo de la línea de
+visión es desconocida y no se recupera: $r_p$ es una cota inferior de la separación real. En una barra, lo que se
+pierde es la \emph{inclinación del disco}, $i$, y eso sí se puede corregir, porque la barra vive en el plano del
+disco. Si el disco tiene elipticidad aparente $\varepsilon_d$ y ángulo PA$_d$, entonces $\cos i = 1 - \varepsilon_d$
+(disco delgado), y un radio a lo largo de la barra, que forma un ángulo
+$\Delta\phi = \mathrm{PA}_{\rm bar} - \mathrm{PA}_d$ con el eje mayor del disco, se deproyecta como
+\begin{equation}\label{eq:deproj}
+a_{\rm dep} = a\,\sqrt{\cos^2\Delta\phi + \frac{\sin^2\Delta\phi}{\cos^2 i}} .
+\end{equation}
+El código deproyecta la elipse completa de la barra (escribe la elipse como forma cuadrática, estira la
+dirección del eje menor del disco en $1/\cos i$ y saca los nuevos semiejes de los autovalores), pero la
+orientación del disco todavía no es confiable (sección~\ref{sec:pendientes}). Por eso aquí, igual que en el
+paper, \textbf{todo se reporta proyectado}.
+
+\section{El método de Alonso et al. (2024)}\label{sec:paper}
+
+Alonso et al. (2024) midieron las barras de 300 galaxias (150 en pares y 150 de control) sobre imágenes JPG de
+SDSS de $500\times500$ píxeles a $0.30\as$/px:
+\begin{enumerate}
+\item Identifican \emph{a ojo} el ángulo de la barra y giran la imagen para dejarla sobre el eje $x$.
+\item Atenúan el canal azul, suavizan con un núcleo gaussiano, pasan a gris y normalizan entre 0 y 1.
+\item Marcan \emph{a mano} cuatro puntos: A y B en las puntas de la barra sobre el perfil en $x$, C y D en sus
+bordes sobre el perfil en $y$, los dos perfiles por el centro.
+\item Promedian el brillo de los cuatro puntos, $I_c = \tfrac14(I_A + I_B + I_C + I_D)$, y toman el contorno
+$I(x,y) = I_c$ como la barra: su extensión en $x$ es $2a$ y en $y$ es $2b$.
+\item Entrenan una ResNet50 para reproducir el ángulo (error $\sim 2^\circ$) y una red densa que, a partir de los
+perfiles en $x$ e $y$, predice el nivel $I_c$. Con ellas miden el resto de la muestra.
+\end{enumerate}
+Las redes \emph{imitan} el criterio de quien marcó: no hay una definición física del fin de la barra. El paper no
+compara con métodos estándar ni discute el efecto del bulbo.
+
+La figura~\ref{fig:paper} reproduce el procedimiento en la galaxia ejemplo con los extremos que midió Valeria
+($a = 14.05\as$, $b = 4.83\as$). El contorno resultante tiene semiejes $13.8\as$ y $4.85\as$, pero no es una
+barra: es una S que sigue el arranque de los brazos. Además, C y D están sobre el perfil \emph{que pasa por el
+centro}, donde domina el bulbo: el ancho mide hasta dónde el bulbo y el disco son más brillantes que $I_c$, no el
+grosor de la barra.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures_barras/paper.pdf}
+\caption{Método de Alonso et al. (2024) en la galaxia ejemplo (TARGETID 39627835815496281, $z = 0.039$), sobre
+la imagen FITS de DESI suavizada. (a) Imagen girada con la barra sobre $x$, los cuatro puntos y el contorno al
+nivel promedio (naranja). (b) Perfiles por el centro en $x$ (arriba) y en $y$ (abajo), con el nivel promedio.}
+\label{fig:paper}
+\end{figure}
+
+\section{Ajuste de isofotas}\label{sec:isofotas}
+
+\subsection{Qué se ajusta}
+
+Una isofota es la curva de brillo constante. El método de Jedrzejewski (1987), implementado en \code{photutils},
+la aproxima por una elipse de centro $(x_0, y_0)$, semieje mayor $a$, elipticidad $\varepsilon$ y ángulo PA.
+Sobre la elipse se muestrea el brillo en función del ángulo excéntrico $E$ y se ajusta
+\begin{equation}\label{eq:jedr}
+I(E) = I_0 + A_1\sin E + B_1\cos E + A_2\sin 2E + B_2\cos 2E .
+\end{equation}
+Si la elipse sigue bien una isofota, el brillo no cambia a lo largo de ella y los cuatro coeficientes son cero.
+Cada uno indica cómo corregir la geometría: $A_1, B_1$ mueven el centro, $A_2$ corrige el ángulo y $B_2$ la
+elipticidad, divididos por el gradiente radial $\partial I/\partial a$. Se itera hasta que el coeficiente mayor
+es pequeño frente al ruido. Repitiendo para $a = 1, 1.05, 1.05^2,\dots$ píxeles se obtienen los perfiles
+$\varepsilon(a)$, PA$(a)$ e $I(a)$ (figura~\ref{fig:isofotas}).
+
+Las elecciones del código: el centro se fija; el brillo sobre cada elipse es la \emph{mediana} (robusta a regiones
+HII, polvo y estrellas) con recorte a $3\sigma$; y se acepta un gradiente con error relativo de hasta 2 (el valor
+por defecto, 0.5, detiene el ajuste en la barra, donde el perfil es casi plano).
+
+\subsection{Leer la barra en las curvas}
+
+Una barra tiene una firma clara (figura~\ref{fig:isofotas}b,c). En el centro $\varepsilon$ es baja porque el
+bulbo es casi redondo; a lo largo de la barra $\varepsilon$ sube con PA casi constante; en su extremo
+$\varepsilon$ cae y PA gira hacia el disco o los brazos. Se usan dos criterios publicados:
+\begin{itemize}
+\item \textbf{Hay barra} si $\varepsilon$ alcanza un máximo $\varepsilon_{\max}\ge 0.25$ y después cae al
+menos $\Delta\varepsilon = 0.1$ (Marinova \& Jogee 2007). Se toma el \emph{primer} pico que cumple esto, no el
+máximo global, porque un disco inclinado o los brazos externos pueden ser más alargados que la barra.
+\item \textbf{Largo} (Erwin 2005): la cota inferior es el radio del máximo, $\aeps$; la superior, $a_{\rm up}$, es
+el primer radio posterior donde $\varepsilon < \varepsilon_{\max} - 0.1$ o el PA se aparta más de $10^\circ$.
+\end{itemize}
+El semiancho de la barra por isofotas es el semieje menor de esa elipse,
+\begin{equation}\label{eq:biso}
+b_{\rm iso} = \aeps\,(1-\varepsilon_{\max}) ,
+\end{equation}
+y el ángulo, el de la isofota en $\aeps$. Para el ejemplo: $\aeps = 15.4\as$, $\varepsilon_{\max} = 0.67$,
+$a_{\rm up} = 18.7\as$, $b_{\rm iso} = 5.1\as$; Valeria midió $14.05\as$. No se busca la barra por debajo de
+$a_{\min} = 2\as$ (unas 1.5 veces el seeing en banda $r$); este umbral es provisorio.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures_barras/isofotas.pdf}
+\caption{Ajuste de isofotas en la galaxia ejemplo. (a) Una de cada cinco elipses ajustadas (gris) y la de la
+barra (azul). (b) Elipticidad, (c) ángulo de posición y (d) brillo superficial frente al semieje mayor. Línea
+azul continua: $\aeps$; punteada: $a_{\rm up}$; negra a trazos: semilargo de Valeria. Gris: $a < a_{\min}$.}
+\label{fig:isofotas}
+\end{figure}
+
+\subsection{El defecto del ancho}
+
+El largo se mide en la punta de la barra, lejos del bulbo. El ancho no: el semieje menor de la elipse
+\eqref{eq:biso} tiene su vértice sobre el corte perpendicular \emph{que pasa por el centro}. Allí la isofota
+envuelve la luz de la barra, del bulbo y del disco, que son más redondos. Esa mezcla diluye la elipticidad
+($\varepsilon_{\max}$ subestima la de la barra) y $b_{\rm iso}$ sale inflado (Gadotti 2008). Es el mismo problema
+que el punto C y D del paper. Además, la isofota real en $\aeps$ no es una elipse sino una S, barra más arranque
+de los brazos (figura~\ref{fig:contornos}a), y la elipse que la resume se alarga y ensancha.
+
+\section{La descomposición de Fourier}\label{sec:fourier}
+
+\subsection{La idea}
+
+Si se recorre un círculo de radio $r$ alrededor del centro, en un disco o un bulbo redondos el brillo es
+constante; si el círculo cruza una barra, el brillo sube dos veces por vuelta, una a cada lado
+(figura~\ref{fig:fourier}b). En cada radio se escribe el brillo como serie de Fourier en el ángulo $\varphi$:
+\begin{equation}\label{eq:fourier}
+I(r,\varphi) = A_0(r) + \sum_{m=1}^{6}\left[a_m(r)\cos m\varphi + b_m(r)\sin m\varphi\right],
+\end{equation}
+con amplitud y fase de cada modo
+\begin{equation}\label{eq:amfase}
+I_m(r) = \sqrt{a_m^2 + b_m^2},\qquad \varphi_m(r) = \frac{1}{m}\arctan\frac{b_m}{a_m}.
+\end{equation}
+$A_0$ es la luz redonda (bulbo y disco). La barra, simétrica bajo un giro de $180^\circ$, vive en los modos pares:
+$m = 2$ da su orientación y $m = 4, 6$ afinan su forma (puntas más rectangulares). $A_2/A_0 = I_2/A_0$ mide su
+fuerza. Sin píxeles enmascarados, los coeficientes son la transformada de Fourier discreta de los $N = 360$
+puntos del círculo,
+\begin{equation}
+a_m = \frac{2}{N}\sum_{n} I_n\cos m\varphi_n,\qquad b_m = \frac{2}{N}\sum_{n} I_n\sin m\varphi_n ;
+\end{equation}
+el código los obtiene por mínimos cuadrados sobre los puntos válidos, para que una estrella enmascarada no los
+sesgue. No es una FFT de la imagen: es una serie en el ángulo, círculo por círculo.
+
+\subsection{El largo y el ancho}
+
+En la galaxia ejemplo, a $r = 8\as$ (sobre la barra) $A_2/A_0 = 0.45$ con fase $164^\circ$; a $r = 25\as$
+(brazos) $A_2/A_0 = 0.51$ pero la fase es $74^\circ$: los brazos también tienen $m = 2$, incluso más que la
+barra, pero su fase gira con el radio porque son espirales. De ahí dos criterios (Aguerri et al. 2000):
+\begin{itemize}
+\item \textbf{Hay barra} si el \emph{primer} pico de $A_2/A_0$ más allá de $a_{\min}$ supera 0.2.
+\item \textbf{Largo por la fase}: la barra es recta, así que $\varphi_2$ es constante a lo largo de ella; termina
+donde $|\varphi_2 - \varphi_2^{\rm pico}| > 10^\circ$. En el ejemplo, $a_{\varphi} = 11.8\as$
+(figura~\ref{fig:fourier}e).
+\end{itemize}
+El criterio del cociente barra/interbarra de Aguerri et al. (2000),
+$I_b/I_{ib} = (A_0 + I_2 + I_4 + I_6)/(A_0 - I_2 + I_4 - I_6)$, resultó inestable con anillos y brazos y no se usa.
+
+Para el ancho se reconstruye la \emph{imagen solo-barra}, la ecuación \eqref{eq:fourier} sin $A_0$ y solo con
+$m = 2, 4, 6$, dentro del radio de la barra (figura~\ref{fig:fourier}f). Como el bulbo es redondo, vive entero en
+$A_0$ y desaparece por construcción. Se gira la imagen con la barra sobre $x$ y se mide el ancho a media altura
+(FWHM) en cortes perpendiculares a $0.5$ y $0.75$ del largo, a cada lado,
+\begin{equation}\label{eq:wf}
+W_F = \frac14\sum_{k\in\{0.5,\,0.75\}}\ \sum_{s=\pm1} \mathrm{FWHM}\big[I_{\rm barra}(x = s\,k\,a,\ y)\big].
+\end{equation}
+No se corta en el centro porque allí los modos $m \ge 2$ valen cero (el ``corbatín'' de la figura). En el
+ejemplo, $W_F = 5.6\as$, frente a $2b_{\rm iso} = 10.2\as$ de las isofotas.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures_barras/fourier.pdf}
+\caption{Fourier en la galaxia ejemplo. (a) Círculos de medida. (b, c) Brillo de los píxeles a lo largo de cada
+círculo (gris), $A_0$ (negro), $A_0$ más $m = 2$ (naranja) y la suma hasta $m = 6$. (d) $A_2/A_0$ y (e) fase
+$\varphi_2$ frente al radio; naranja: fin de la barra por la fase; azul: $\aeps$; negra a trazos: Valeria.
+(f) Imagen solo-barra ($m = 2, 4, 6$) girada, con la barra de Fourier.}
+\label{fig:fourier}
+\end{figure}
+
+\section{La barra combinada}\label{sec:combinada}
+
+Fourier da un ancho sin bulbo, pero su largo por la fase se pasa en muchas galaxias (sección~\ref{sec:resultados}).
+Las isofotas dan un largo que coincide con Valeria, pero un ancho inflado. La barra que se usa combina lo mejor de
+cada uno:
+\begin{equation}\label{eq:comb}
+a = \aeps,\qquad \mathrm{PA} = \mathrm{PA}(\aeps),\qquad W = W_F\ \text{medido a } 0.5\,\aeps \text{ y } 0.75\,\aeps .
+\end{equation}
+El código guarda los dos ángulos: \code{pa\_eps}, el de la isofota en $\aeps$, y \code{pa\_bar}, el promedio
+entre $\aeps/2$ y $\aeps$ (v4, sección~\ref{sec:errores}); la descomposición 2D favorece el primero
+(sección~\ref{sec:2d}). El ancho combinado de la galaxia ejemplo es $7.3\as$ (figura~\ref{fig:contornos}c). La figura muestra por qué hace
+falta: la isofota real (a) es una S y la de Fourier (b) son dos lóbulos sin bulbo; ninguna es ``la silueta'' de la
+barra. Los dos métodos entregan números ($a$, $W$, PA) y las elipses son solo una forma de dibujarlos.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures_barras/contornos.pdf}
+\caption{Galaxia ejemplo con la barra sobre $x$. (a) Isofota real al nivel de $\aeps$ (azul) y su elipse (a
+trazos). (b) Contorno a media altura de la imagen solo-barra. (c) Barras con los parámetros de cada método:
+isofotas (azul), Fourier (naranja) y combinada (morado); círculos: extremos de Valeria.}
+\label{fig:contornos}
+\end{figure}
+
+\section{Errores encontrados y cómo se corrigieron}\label{sec:errores}
+
+La primera corrida sobre las 157 galaxias en común con Valeria dio mediana correcta pero muchos casos lejísimos.
+No eran fallas del método sino del código (figura~\ref{fig:problemas}):
+\begin{enumerate}
+\item \textbf{Centro en una estrella} (13 galaxias). El centro era el píxel más brillante de toda la región de la
+galaxia; si una estrella la tocaba, ganaba (a $33.9\as$ del núcleo en el panel a). Ahora se busca a menos de
+10\,px del centro del recorte, que está en la posición DESI.
+\item \textbf{Isofotas congeladas} ($\sim 22$ galaxias). \code{fit\_image} de \code{photutils} congela la geometría
+de todos los radios mayores cuando dos isofotas seguidas tienen gradiente $\ge 0$, cosa común en barras y
+anillos (panel b: llega a $3.9\as$ en vez de $26.3\as$). Ahora cada radio se ajusta por separado partiendo de la
+última elipse buena.
+\item \textbf{Isofotas pegadas al inicio} (16 galaxias). Cuando un radio no converge en 50 iteraciones (código 2),
+\code{photutils} devuelve la geometría inicial como si fuera un ajuste. Con el inicio en $\varepsilon = 0.2$,
+$\mathrm{PA} = 0$, eso crea un salto falso de $\varepsilon$ que parece el fin de una barra (panel c: 7 isofotas con
+$\varepsilon = 0.2$ exacto entre $3.9$ y $5.3\as$). Ahora el ajuste parte de la forma de la luz, medida con sus
+segundos momentos, y un código 2 cuya $\varepsilon$ no se movió se descarta.
+\item \textbf{Pico equivocado}. Con isofotas que ya llegan al disco externo, el máximo global de $\varepsilon$ caía
+a veces allí. Se usa el primer pico que cumple Marinova \& Jogee.
+\end{enumerate}
+La figura~\ref{fig:versiones} muestra el efecto de cada corrección sobre el largo en las 157: la fracción a menos
+del 20\,\% de Valeria pasa de 69 a 89\,\% y las galaxias fuera de $0.6$–$1.5$ de 24 a 3. Promediar el PA sobre la
+barra (v4) no cambia el largo; el ángulo se mueve $1.4^\circ$ en mediana.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures_barras/problemas.pdf}
+\caption{Tres errores del primer código. (a) Centro viejo en una estrella (naranja) y nuevo (azul).
+(b) Elipticidad con \code{fit\_image} (congelada a partir de $3.9\as$) y con el ajuste radio por radio. (c) Ajuste
+desde $\varepsilon = 0.2$, PA $= 0$ (naranja), con las isofotas que nunca se movieron (cuadrados), y el actual.}
+\label{fig:problemas}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures_barras/versiones.pdf}
+\caption{Largo por isofotas en las 157 galaxias en común con Valeria, versión por versión. v0: primer código;
+v1: centro cerca del recorte, ajuste radio por radio, primer pico; v2: isofotas pegadas (criterio parcial) y ancho
+combinado; v3: inicio en los momentos de la luz y criterio completo; v4: PA promediado. (a) Mediana y semiancho
+16--84\,\% de $\aeps/a_{\rm ref}$. (b) Fracción a menos del 20\,\% (azul) y número fuera de $0.6$--$1.5$ (naranja).}
+\label{fig:versiones}
+\end{figure}
+
+\section{Descomposición 2D}\label{sec:2d}
+
+\subsection{El modelo}
+
+GALFIT (Peng et al. 2002) e imfit (Erwin 2015; aquí \code{pyimfit}) ajustan a la imagen una suma de componentes
+analíticas convolucionada con la PSF, minimizando
+\begin{equation}\label{eq:chi2}
+\chi^2 = \sum_{\rm píxeles}\frac{\left[I_{\rm obs} - (\mathrm{PSF}\ast I_{\rm modelo})\right]^2}{\sigma^2},
+\end{equation}
+con $\sigma^2$ de la varianza inversa del recorte y la PSF del coadd de Legacy. Componentes: bulbo Sérsic,
+\begin{equation}
+I(r) = I_e\exp\left\{-b_n\left[\left(r/r_e\right)^{1/n}-1\right]\right\};
+\end{equation}
+disco exponencial, $I(r) = I_0\,e^{-r/h}$; anillo gaussiano; y barra Ferrers sobre una elipse generalizada,
+\begin{equation}\label{eq:ferrers}
+I(m) = I_0\left[1-\left(\frac{m}{a_{\rm bar}}\right)^2\right]^{n},\qquad
+m = \left(|x|^{c_0+2} + \left|\frac{y}{1-\varepsilon}\right|^{c_0+2}\right)^{1/(c_0+2)},
+\end{equation}
+con $n = 2$; $c_0 > 0$ hace la barra más rectangular. Los valores iniciales salen de las isofotas.
+
+\subsection{Qué aporta}
+
+En la galaxia 39627884146461249, donde isofotas y Fourier no coincidían en el ángulo, el modelo sin anillo da
+$\chi^2_\nu = 1.71$ y estira la barra hasta absorber el anillo; con anillo, $\chi^2_\nu = 1.20$
+(figura~\ref{fig:2d}). La barra 2D tiene PA $= 133.8^\circ$: confirma el ángulo de la isofota en $\aeps$
+($130.8^\circ$) y no el de Fourier ($120.5^\circ$), que mide su fase a $4\as$, donde todavía pesa el bulbo. En 10
+galaxias de Valeria al azar, el PA 2D y el de las isofotas difieren $1.8^\circ$ en mediana.
+
+El largo, en cambio, no es comparable: $a_{\rm bar}$ es donde el perfil \eqref{eq:ferrers} llega a cero, no donde
+la barra deja de verse, y sale $1.47$ veces $\aeps$ en las 10 galaxias. En la imagen menos bulbo, disco y anillo
+(figura~\ref{fig:2d}d) la barra visible termina cerca de Valeria ($10.9\as$). En 10 galaxias ciegas con barras de
+$2$--$5\as$, el ajuste falla en 2 ($\chi^2_\nu = 562$ y $58$) y $c_0$ queda a menudo en sus límites. La
+descomposición sirve como árbitro del ángulo en barras grandes, no como medida del largo.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures_barras/descomposicion.pdf}
+\caption{Descomposición de 39627884146461249. (a) Barras combinada (morado), de Fourier (naranja) y 2D (verde);
+círculo: Valeria. (b) Modelo bulbo + disco + barra + anillo. (c) Residuo normalizado. (d) Imagen menos bulbo,
+disco y anillo, con la barra 2D.}
+\label{fig:2d}
+\end{figure}
+
+\section{Resultados}\label{sec:resultados}
+
+\subsection{Frente a Valeria: 448 barras}
+
+Valeria midió 448 galaxias. 157 están en nuestra muestra DESI DR1 (las que se usaron para corregir el código);
+las 291 restantes no tienen espectro DESI pero sí imagen Legacy, y se midieron con la posición y el $z$ de SDSS y
+un recorte de tamaño $0.66\,R_{90}$ (el cociente mediano entre el radio de Legacy y el de SDSS en las 157). Son la
+prueba justa: no se usaron para ajustar nada. La tabla~\ref{tab:valeria} y la figura~\ref{fig:valeria} resumen
+la comparación (mediana del cociente nuestro/Valeria, semiancho 16--84\,\% y fracción a menos del 20\,\%).
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lccc}
+\toprule
+ & 157 (ajuste) & 291 (no usadas) & 448 \\
+\midrule
+Semilargo, isofotas & $1.01\pm0.10$ (89\,\%) & $1.01\pm0.11$ (88\,\%) & $1.01\pm0.10$ (88\,\%) \\
+Semilargo, Fourier & $1.28\pm0.31$ (35\,\%) & $1.36\pm0.41$ (32\,\%) & $1.31\pm0.39$ (33\,\%) \\
+Ancho, isofotas ($2b_{\rm iso}$) & $0.97\pm0.12$ & $0.97\pm0.12$ & $0.97\pm0.12$ \\
+Ancho, combinada ($W_F$) & $0.47\pm0.10$ & $0.50\pm0.09$ & $0.49\pm0.10$ \\
+Largo en kpc, isofotas & $1.05\pm0.10$ & $1.05\pm0.11$ & $1.05\pm0.11$ \\
+\bottomrule
+\end{tabular}
+\caption{Cociente nuestro/Valeria (proyectado). Entre paréntesis, la fracción a menos del 20\,\%.}
+\label{tab:valeria}
+\end{table}
+
+\begin{itemize}
+\item \textbf{Largo}: coincide, y lo mismo en las 291 no usadas. Solo 7 de 448 quedan fuera de $0.6$--$1.5$.
+\item \textbf{Ancho}: el de las isofotas coincide con el de Valeria porque los dos pasan por el centro e incluyen
+el bulbo; el de Fourier es la mitad porque no lo incluye. Es otra definición, no un error.
+\item \textbf{Largo en kpc}: $1.05$ en vez de $1.01$ porque nuestra escala (Planck18) es $3.4\,\%$ mayor que la de
+Valeria; con la misma cosmología el cociente es el de los segundos de arco.
+\item \textbf{Fourier} se pasa en largo ($1.3$, con el triple de dispersión): en barras chicas y discos inclinados
+la fase se mantiene hacia los brazos.
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures_barras/valeria.pdf}
+\caption{Comparación con Valeria. (a) Semilargo por isofotas. (b) Ancho por isofotas (azul) y combinado
+(morado). (c) Largo en kpc. Llenos: las 157 usadas para corregir el código; vacíos: las 291 no usadas.}
+\label{fig:valeria}
+\end{figure}
+
+\subsection{DESI frente a SDSS}
+
+La galaxia ejemplo medida con el mismo código en las dos imágenes (figura~\ref{fig:desi_sdss}): $\aeps = 15.4$ y
+$15.0\as$, $\varepsilon_{\max} = 0.67$ en ambas, $a_\varphi = 11.8$ y $11.9\as$, $W_F = 5.6$ y $5.5\as$. El
+método no depende de la imagen. La diferencia con Valeria en esta galaxia ($14.05\as$) es del método: con la misma
+imagen SDSS, el largo por isofotas es 7\,\% mayor. Lo que sí depende de la imagen es la profundidad: las isofotas
+llegan a $42.9\as$ en DESI y a $25.7\as$ en SDSS, lo que afecta la orientación del disco
+(sección~\ref{sec:pendientes}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures_barras/desi_sdss.pdf}
+\caption{Galaxia ejemplo en (a) DESI y (b) SDSS, con las barras combinada (morado) y de Fourier (naranja).
+(c) Elipticidad y (d) fase $\varphi_2$ en las dos imágenes.}
+\label{fig:desi_sdss}
+\end{figure}
+
+\subsection{Galaxias sin referencia}
+
+La figura~\ref{fig:galeria} muestra la barra combinada en 5 de las 291 no usadas y en 5 galaxias ciegas de DESI
+DR1, elegidas al azar. En las ciegas las barras son mucho más chicas ($2$--$4\as$): la muestra de Valeria está
+sesgada a galaxias grandes y cercanas, y la mediana de nuestra muestra es $z \approx 0.06$. En esas barras la
+medida es posible pero está cerca del límite de resolución.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures_barras/galeria.pdf}
+\caption{Barra combinada (morado) con la barra sobre $x$. Arriba: 5 de las 291 de Valeria no usadas (círculo: su
+semilargo). Abajo: 5 galaxias ciegas de DESI DR1, sin referencia.}
+\label{fig:galeria}
+\end{figure}
+
+\section{Limitaciones y pendientes}\label{sec:pendientes}
+
+\begin{itemize}
+\item \textbf{Resolución.} Con seeing de $\sim 1.2\as$, una barra de $2$--$3\as$ está a pocos FWHM. Hay que fijar,
+con números propios, desde qué tamaño aparente la medida es confiable ($a_{\min} = 2\as$ es provisorio).
+\item \textbf{Deproyección.} La orientación del disco se toma de las isofotas externas ($a \ge 0.7\,a_{\rm último}$),
+que en imágenes poco profundas o con anillos trazan el anillo y no el disco. Hasta resolverlo, todo es proyectado.
+\item \textbf{Máscaras.} Las estrellas superpuestas a la galaxia y los artefactos (trazas de satélite) no se
+enmascaran; la mediana los atenúa. Se probará GLIDErS (Erostegui), que enmascara estrellas superpuestas y
+artefactos.
+\item \textbf{Ángulo.} En 14 de 157 galaxias isofotas y Fourier difieren más de $10^\circ$; a ojo y según la
+descomposición, el que falla es Fourier. Se usará como bandera de revisión.
+\item \textbf{Definición del fin de la barra.} El largo por isofotas coincide con Valeria, pero el largo es una
+definición: en la galaxia ejemplo los dos dan $14$--$15\as$ y a ojo se ve $\sim 11\as$, que es lo que da la fase de
+Fourier. Conviene reportar $\aeps$ y $a_{\rm up}$ como rango.
+\end{itemize}
+
+\section{Del documento al código}\label{sec:codigo}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Paso & Dónde \\
+\midrule
+Muestra (GZ DESI $p_{\rm bar} > 0.5$, DR1 a $< 1\as$, $z < 0.1$) & \code{src/sample.py}, \code{scripts/build\_sample.py} \\
+Recortes FITS y JPG, DESI y SDSS & \code{src/cutout.py} \\
+Cielo, máscara, centro, isofotas radio por radio & \code{src/isophotes.py} \\
+Barra en $\varepsilon(a)$, PA$(a)$; deproyección \eqref{eq:deproj}; kpc \eqref{eq:kpc} & \code{src/bar.py} \\
+Modos de Fourier \eqref{eq:fourier}, largo por la fase, ancho \eqref{eq:wf} & \code{src/fourier.py} \\
+Todo junto para una galaxia; barra combinada \eqref{eq:comb} & \code{src/measure.py}, \code{scripts/measure\_bars.py} \\
+Descomposición 2D \eqref{eq:chi2}--\eqref{eq:ferrers} & \code{src/decompose.py}, \code{scripts/decompose\_bars.py} \\
+Comparación con Valeria & \code{scripts/build\_reference\_sample.py}, \code{tools/plot\_vs\_reference.py} \\
+Galerías y figuras de control & \code{tools/plot\_gallery.py}, \code{tools/plot\_profiles.py}, \code{tools/plot\_fourier.py}, \code{tools/plot\_decomp.py} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section*{Referencias}
+\small
+Aguerri, J. A. L., Muñoz-Tuñón, C., Varela, A. M., \& Prieto, M. 2000, A\&A, 361, 841.\\
+Alonso, S., Vera-Rueda, M., Coldwell, G., Duplancic, F., \& Mesa, V. 2024, arXiv:2409.00194.\\
+Erwin, P. 2005, MNRAS, 364, 283.\\
+Erwin, P. 2015, ApJ, 799, 226.\\
+Gadotti, D. A. 2008, MNRAS, 384, 420.\\
+Jedrzejewski, R. I. 1987, MNRAS, 226, 747.\\
+Marinova, I., \& Jogee, S. 2007, ApJ, 659, 1176.\\
+Peng, C. Y., Ho, L. C., Impey, C. D., \& Rix, H.-W. 2002, AJ, 124, 266.\\
+Walmsley, M., et al. 2023, MNRAS, 526, 4768.
+
+\end{document}

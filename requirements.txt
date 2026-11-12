@@ -1,0 +1,12 @@
+# Bars in DESI DR1. Reference environment: conda astro-clean (Python 3.11).
+numpy>=2.3
+scipy>=1.16
+pandas>=2.3
+pyarrow>=21.0
+astropy>=6.1
+photutils==2.3.0   # newer versions require astropy 8
+matplotlib>=3.10
+joblib>=1.5
+
+# checks/ only (2D decomposition)
+# pyimfit==1.1
