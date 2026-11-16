@@ -1,14 +1,21 @@
 """
 Cutouts from the Legacy Survey viewer: FITS (flux, nanomaggies) to measure,
 JPG to look at. The viewer also serves SDSS images, resampled at their
-native scale, so both surveys go through the same code.
+native scale, so both surveys go through the same code. The size of the
+cutout comes from the Tractor SHAPE_R, queried in Astro Data Lab when the
+sample does not have it.
 """
+import io
 import time
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.request import urlretrieve
+from urllib.parse import urlencode
+from urllib.request import urlopen, urlretrieve
 
+import astropy.units as u
 import numpy as np
+import pandas as pd
+from astropy.coordinates import SkyCoord
 
 VIEWER = "https://www.legacysurvey.org/viewer"
 SURVEYS = {  # layer, native pixel scale [arcsec/px]
@@ -17,6 +24,7 @@ SURVEYS = {  # layer, native pixel scale [arcsec/px]
 }
 ENDPOINT = {"fits": "fits-cutout", "jpg": "jpeg-cutout"}
 MAGIC = {"fits": b"SIMPLE", "jpg": b"\xff\xd8"}  # the viewer answers errors with HTML
+TAP = "https://datalab.noirlab.edu/tap/sync"  # accepts boxes joined by OR, not CIRCLE nor uploads
 
 
 def pixscale(survey):
@@ -64,3 +72,26 @@ def download(ra, dec, size, out_dir, name, survey="desi", band="r"):
             path.unlink()
             raise RuntimeError(f"{name}: the viewer did not return a {kind}")
     return paths
+
+
+def tractor_shape(ra, dec, radius=1.0, batch=100):
+    """SHAPE_R [arcsec] and TYPE of the nearest Legacy DR10 Tractor source within radius [arcsec]
+    of each position; NaN and None where there is none. DUP rows (shapeless copies of an atlas
+    galaxy) are skipped."""
+    ra, dec = np.asarray(ra, float), np.asarray(dec, float)
+    out = pd.DataFrame({"SHAPE_R": np.nan, "TYPE": None}, index=range(len(ra)))
+    d = radius / 3600
+    for s in range(0, len(ra), batch):
+        r, de = ra[s:s + batch], dec[s:s + batch]
+        dr = d / np.cos(np.radians(de))
+        boxes = " OR ".join(f"(ra BETWEEN {a - x:.7f} AND {a + x:.7f} AND dec BETWEEN {b - d:.7f} AND {b + d:.7f})"
+                            for a, b, x in zip(r, de, dr))
+        query = f"SELECT ra, dec, shape_r, type FROM ls_dr10.tractor WHERE type <> 'DUP' AND ({boxes})"
+        body = urlencode({"REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "csv", "QUERY": query}).encode()
+        cat = pd.read_csv(io.StringIO(urlopen(TAP, body, timeout=300).read().decode()))
+        if cat.empty:
+            continue
+        i, sep, _ = SkyCoord(r * u.deg, de * u.deg).match_to_catalog_sky(SkyCoord(cat.ra.values * u.deg, cat.dec.values * u.deg))
+        ok = sep.arcsec <= radius
+        out.loc[s + np.flatnonzero(ok), ["SHAPE_R", "TYPE"]] = cat.iloc[i[ok]][["shape_r", "type"]].values
+    return out

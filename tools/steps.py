@@ -1,6 +1,7 @@
 """
-Figures of each step of the method, for notebooks/Barra_ejemplo.ipynb.
-Every function takes what the step produced and draws it; no measuring here.
+Figures of each step of the method (notebooks/Barra_ejemplo.ipynb), and the
+two drawing helpers shared with plot_gallery.py: boxy (the drawn bar) and
+bar_on_x (the image rotated with the bar on x). No measuring here.
 """
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,7 +29,11 @@ def boxy(a, b, angle_deg, x0, y0, c=3.0, n=300):
 
 
 def bar_on_x(img, x0, y0, angle_deg):
-    """Image moved to the centre (x0, y0) and rotated so that angle_deg lies on +x."""
+    """Image moved to the centre (x0, y0) and rotated so that angle_deg (from +x) lies on +x.
+
+    ndimage.rotate turns counter-clockwise in (row, col), i.e. clockwise as
+    shown with origin="lower", so +angle_deg brings that direction to +x.
+    """
     c = (np.array(img.shape) - 1) / 2
     shifted = np.roll(img, (int(round(c[0] - y0)), int(round(c[1] - x0))), axis=(0, 1))
     return rotate(shifted, angle_deg, reshape=False, order=1), c[1], c[0]

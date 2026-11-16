@@ -27,7 +27,7 @@ if str(ROOT) not in sys.path:
 
 from checks import decompose
 from src.cutout import cutout_paths, pixscale
-from tools.plot_gallery import boxy
+from tools.steps import boxy
 
 
 def row_panels(axes, g, d, cut_dir, survey, a_ref):

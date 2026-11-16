@@ -46,6 +46,8 @@ ax[1].imshow(model, origin="lower", cmap="gray_r", norm=norm)
 ax[2].imshow((img - model) * np.sqrt(np.clip(ivar, 0, None)), origin="lower", cmap="RdBu_r", vmin=-10, vmax=10)
 ax[3].imshow(img - model + bar_img, origin="lower", cmap="gray_r", norm=norm)
 ax[3].plot(*e.boxy(A, Bm, P["barPA"] + 90, x0, y0, c=P["c0"] + 2), color=e.DEC, lw=0.8)
+ax[3].plot(*e.boxy(row.a_eps / ps, row.W_comb / 2 / ps, row.pa_eps + 90, x0, y0), color=e.COMB, lw=1)
+ax[3].add_patch(Circle((x0, y0), A_REF / ps, fill=False, color=e.REF, ls="--", lw=0.6))
 for a_, t in zip(ax, ["(a) barras", "(b) modelo", r"(c) residuo$/\sigma$", "(d) imagen $-$ (bulbo+disco+anillo)"]):
     e.zoom(a_, x0, y0, 28 / ps)
     a_.set_title(t, fontsize=6.5)

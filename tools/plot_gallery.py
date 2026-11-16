@@ -18,33 +18,13 @@ import pandas as pd
 from astropy.io import fits
 from astropy.visualization import AsinhStretch, ImageNormalize, PercentileInterval
 from matplotlib.patches import Circle
-from scipy.ndimage import rotate
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.cutout import cutout_paths, pixscale
-
-
-def boxy(a, b, pa_img, x0, y0, c=3.0, n=300):
-    """Generalised ellipse |x/a|^c + |y/b|^c = 1 rotated by pa_img [deg, from +x CCW]."""
-    t = np.linspace(0, 2 * np.pi, n)
-    x = a * np.sign(np.cos(t)) * np.abs(np.cos(t)) ** (2 / c)
-    y = b * np.sign(np.sin(t)) * np.abs(np.sin(t)) ** (2 / c)
-    p = np.deg2rad(pa_img)
-    return x0 + x * np.cos(p) - y * np.sin(p), y0 + x * np.sin(p) + y * np.cos(p)
-
-
-def bar_on_x(img, g):
-    """Image moved to the galaxy centre and rotated so the bar (isophote PA) lies on +x.
-
-    ndimage.rotate turns counter-clockwise in (row, col), i.e. clockwise as
-    shown with origin="lower", so +pa_img brings the bar to the x axis.
-    """
-    c = (np.array(img.shape) - 1) / 2
-    shifted = np.roll(img, (int(round(c[0] - g.y0)), int(round(c[1] - g.x0))), axis=(0, 1))
-    return rotate(shifted, g.pa_bar + 90, reshape=False, order=1), c[1], c[0]
+from tools.steps import bar_on_x, boxy
 
 
 def panel(ax, g, cut_dir, survey, on_x=False, cmap="gray_r"):
@@ -52,7 +32,7 @@ def panel(ax, g, cut_dir, survey, on_x=False, cmap="gray_r"):
     img = fits.getdata(cutout_paths(cut_dir, str(g.TARGETID), survey)["fits"]) - g.sky
     x0, y0, turn = g.x0, g.y0, 0.0
     if on_x:
-        img, x0, y0 = bar_on_x(img, g)
+        img, x0, y0 = bar_on_x(img, g.x0, g.y0, g.pa_bar + 90)
         turn = g.pa_bar + 90
     norm = ImageNormalize(img, interval=PercentileInterval(99.8), stretch=AsinhStretch(0.03))
     ax.imshow(img, origin="lower", cmap=cmap, norm=norm)
