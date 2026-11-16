@@ -42,15 +42,16 @@ def to_astro_pa(pa_img):
 def disc(t, pixscale, a_bar, mu=(23.5, 25.0)):
     """Disc ε and PA (image frame): isophotes beyond 1.5 a_bar with mu[0] < μ_r < mu[1]
     (else the last 3); median ε, PA averaged on the doubled angle."""
-    t = t[np.isin(np.array(t["stop_code"]), isophotes.GOOD_STOP)]
-    m_mu = 22.5 - 2.5 * np.log10(np.clip(np.array(t["intens"]), 1e-9, None) / pixscale ** 2)
-    out = np.flatnonzero(np.array(t["sma"]) * pixscale > 1.5 * a_bar)
+    t = t[np.isin(t["stop_code"], isophotes.GOOD_STOP)]
+    sma, intens, eps, pa = (np.asarray(t[c]) for c in ("sma", "intens", "ellipticity", "pa"))
+    m_mu = 22.5 - 2.5 * np.log10(np.clip(intens, 1e-9, None) / pixscale ** 2)
+    out = np.flatnonzero(sma * pixscale > 1.5 * a_bar)
     sel = out[(m_mu[out] > mu[0]) & (m_mu[out] < mu[1])]
     sel = sel if sel.size >= 3 else out[-3:]
     if not sel.size:
         return np.nan, np.nan
-    t2 = np.radians(2 * np.array(t["pa"])[sel])
-    return np.median(np.array(t["ellipticity"])[sel]), np.degrees(np.arctan2(np.sin(t2).mean(), np.cos(t2).mean())) / 2 % 180
+    t2 = np.radians(2 * pa[sel])
+    return np.median(eps[sel]), np.degrees(np.arctan2(np.sin(t2).mean(), np.cos(t2).mean())) / 2 % 180
 
 
 def deproject(length, dphi, eps_disc):
@@ -72,7 +73,7 @@ def measure_image(img, pixscale, z=None, a_min=A_MIN, iso_path=None):
         t.write(iso_path, overwrite=True)
     a, eps, pa = bar.profiles(t, pixscale)
     scale = bar.kpc_per_arcsec(z) if z is not None else np.nan
-    a_min = max(a_min, R_MIN_KPC / scale) if z is not None else a_min
+    a_min = np.fmax(a_min, R_MIN_KPC / scale)  # without z, scale is NaN and fmax keeps a_min
     b = bar.bar_from_profile(a, eps, pa, a_min)
 
     r, _, am, bm = fourier.polar_modes(img, mask, x0, y0, rmax=r_gal)

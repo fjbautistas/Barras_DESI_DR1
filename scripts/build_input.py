@@ -35,15 +35,12 @@ def main():
 
     raw = pd.read_parquet(args.list) if args.list.suffix == ".parquet" else pd.read_csv(args.list)
     s = raw.rename(columns={args.ra: "RA", args.dec: "DEC"})
-    s["TARGETID"] = s["TARGETID"] if "TARGETID" in s else np.arange(len(s))
-    s["Z"] = s["Z"] if "Z" in s else np.nan
-    s["SHAPE_R"] = s["SHAPE_R"] if "SHAPE_R" in s else np.nan
+    for col, default in (("TARGETID", np.arange(len(s))), ("Z", np.nan), ("SHAPE_R", np.nan)):
+        if col not in s:
+            s[col] = default
     miss = s["SHAPE_R"].isna().to_numpy()
     if miss.any():
-        tr = tractor_shape(s.loc[miss, "RA"], s.loc[miss, "DEC"])
-        s.loc[miss, "SHAPE_R"] = tr["SHAPE_R"].to_numpy()
-        s["TRACTOR_TYPE"] = None
-        s.loc[miss, "TRACTOR_TYPE"] = tr["TYPE"].to_numpy()
+        s.loc[miss, ["SHAPE_R", "TRACTOR_TYPE"]] = tractor_shape(s.loc[miss, "RA"], s.loc[miss, "DEC"]).to_numpy()
     lost = s.loc[s["SHAPE_R"].isna(), "TARGETID"].tolist()
     s = s[s["SHAPE_R"].notna()]
 

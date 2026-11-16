@@ -10,7 +10,6 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
-from scipy.ndimage import rotate
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -22,9 +21,13 @@ for _m in [m for m in sys.modules if m == "src" or m.startswith("src.")]:
     del sys.modules[_m]
 sys.path.insert(0, str(ROOT))
 
-from src import bar, fourier, isophotes  # noqa: E402
+from checks import bar_full as bar         # noqa: E402  (a_up, b_bar: versiones completas, no están en src)
+from checks import fourier_full as fourier  # noqa: E402
+from src import isophotes                 # noqa: E402
 from src.cutout import cutout_paths, pixscale  # noqa: E402
 from src.measure import A_MIN            # noqa: E402
+from tools.compare_reference import stats  # noqa: E402
+from tools.steps import bar_on_x as on_x, boxy  # noqa: E402,F401
 
 OUT = HERE.parent / "figures_barras"
 DATA = HERE.parent / "data_barras"
@@ -67,22 +70,6 @@ def fourier_of(g, rmax_arcsec=40.0):
     return dict(r=r, a0=a0, am=am, bm=bm, fb=fb, w=w, wc=wc)
 
 
-def on_x(img, x0, y0, pa_img):
-    """Imagen centrada en (x0, y0) y girada para que el ángulo pa_img [deg, desde +x] quede sobre +x."""
-    c = (np.array(img.shape) - 1) / 2
-    shifted = np.roll(img, (int(round(c[0] - y0)), int(round(c[1] - x0))), axis=(0, 1))
-    return rotate(shifted, pa_img, reshape=False, order=1), c[1], c[0]
-
-
-def boxy(a, b, pa_img, x0, y0, c=3.0, n=300):
-    """Elipse generalizada |x/a|^c + |y/b|^c = 1 girada pa_img [deg, desde +x]."""
-    t = np.linspace(0, 2 * np.pi, n)
-    x = a * np.sign(np.cos(t)) * np.abs(np.cos(t)) ** (2 / c)
-    y = b * np.sign(np.sin(t)) * np.abs(np.sin(t)) ** (2 / c)
-    p = np.deg2rad(pa_img)
-    return x0 + x * np.cos(p) - y * np.sin(p), y0 + x * np.sin(p) + y * np.cos(p)
-
-
 def asinh_norm(img, pct=99.8, soft=0.03):
     from astropy.visualization import AsinhStretch, ImageNormalize, PercentileInterval
     return ImageNormalize(img, interval=PercentileInterval(pct), stretch=AsinhStretch(soft))
@@ -95,7 +82,5 @@ def zoom(ax, x0, y0, half_px):
 
 def ratio_stats(x, ref):
     """N, mediana del cociente, semiancho 16-84 % y fracción a menos del 20 %."""
-    ok = np.isfinite(x) & np.isfinite(ref)
-    q = np.asarray(x)[ok] / np.asarray(ref)[ok]
-    p16, p50, p84 = np.percentile(q, [16, 50, 84])
-    return ok.sum(), p50, (p84 - p16) / 2, np.mean(np.abs(q - 1) < 0.2)
+    r = stats(np.asarray(x, float), np.asarray(ref, float))
+    return r["N"], r["median"], r["half_68"], r["within_20"]

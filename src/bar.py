@@ -49,12 +49,11 @@ def bar_from_profile(a, eps, pa, a_min, deps=0.1, dpa=10.0, eps_bar_min=0.25):
     """
     i = bar_peak(a, eps, a_min, deps, eps_bar_min)
     eps_bar, pa_bar, a_eps = eps[i], pa[i], a[i]
-    after = np.arange(len(a)) > i
     plateau = (a >= max(a_min, a_eps / 2)) & (a <= a_eps)
     return {
         "a_eps": a_eps, "eps_bar": eps_bar, "pa_bar": pa_bar,
         "flag_eps": bool(eps_bar >= eps_bar_min),
-        "flag_end": bool((after & ((eps < eps_bar - deps) | (axis_diff(pa, pa_bar) > dpa))).any()),
+        "flag_end": bool(((eps[i + 1:] < eps_bar - deps) | (axis_diff(pa[i + 1:], pa_bar) > dpa)).any()),
         "flag_pa": bool(axis_diff(pa[plateau], pa_bar).max() <= dpa),
     }
 
