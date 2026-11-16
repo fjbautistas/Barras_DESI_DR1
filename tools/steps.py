@@ -134,3 +134,25 @@ def show_bar(img, res, pixscale, half, a_ref=None):
     ax[0].set_title(f"a = {res['a_bar']:.1f}″, W = {res['W_bar']:.1f}″, PA = {res['pa_bar']:.0f}°")
     ax[1].set_title("bar on the x axis" + ("   circles: reference ends" if a_ref else ""))
     fig.tight_layout()
+
+
+def show_bands(img, res, eps_prof, pixscale, a_ref, title=""):
+    """The bar measured in r (blue) and in z (purple): on the r image rotated with the
+    r bar on x, and on ε(a). res and eps_prof are {band: result}, {band: (a, ε)}."""
+    colors = {"r": "tab:blue", "z": "tab:purple"}
+    angle = res["r"]["pa_bar"] + 90
+    rot, cx, cy = bar_on_x(img, res["r"]["x0"], res["r"]["y0"], angle)
+    fig, ax = plt.subplots(1, 2, figsize=(10, 4), gridspec_kw={"width_ratios": [1, 1.4]})
+    _show(ax[0], rot, cx, cy, 1.6 * max(res["r"]["a_bar"], res["z"]["a_bar"], a_ref) / pixscale)
+    for s in (-1, 1):
+        ax[0].plot(cx + s * a_ref / pixscale, cy, "o", mfc="none", mec="k", ms=8)
+    for b, r in res.items():
+        turn = r["pa_bar"] + 90 - angle
+        ax[0].plot(*boxy(r["a_bar"] / pixscale, r["W_bar"] / 2 / pixscale, turn, cx, cy), color=colors[b], lw=1.6)
+        ax[1].plot(*eps_prof[b], ".", ms=3, color=colors[b], label=f"{b}: a = {r['a_bar']:.1f}″")
+        ax[1].axvline(r["a_bar"], color=colors[b], lw=1)
+    ax[1].axvline(a_ref, color="k", ls="--", lw=0.8, label=f"reference: {a_ref:.1f}″")
+    ax[1].set(xlim=(0, 2.5 * max(r["a_bar"] for r in res.values())), xlabel="a [arcsec]", ylabel="ε")
+    ax[1].legend(frameon=False)
+    ax[0].set_title(title)
+    fig.tight_layout()

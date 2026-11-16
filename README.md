@@ -15,7 +15,7 @@ Barras_DESI_DR1/
 
 ## Method
 
-1. **Image**: a FITS cutout in one band (Legacy Survey DR10 r, 0.262″/px),
+1. **Image**: a FITS cutout in one band (Legacy Survey DR10 r or z, 0.262″/px),
    centred on the galaxy, reaching 4 half-light radii (Tractor `SHAPE_R`).
 2. **Sky and masks**: sky level by sigma clipping; every source except the
    central galaxy is masked.
@@ -40,7 +40,10 @@ building the method and the 291 never looked at
 (`outputs/gallery/reference_1to1.png`). The reference widths include the
 bulge; ours do not, so `W_bar` is about half of them. `b_iso` (the
 isophote semi-minor axis) is the comparable one. The deprojection agrees
-with S⁴G orientations (factor ratio 0.98, 93 % within 20 %). Details, tests
+with S⁴G orientations (factor ratio 0.98, 93 % within 20 %). The z band gives
+the same agreement with the reference (88.6 %) and the same deprojection
+(0.98), with the same disc window; r is deeper, z follows the stellar mass.
+Measuring both and flagging |r/z − 1| > 0.15 picks out galaxies to check. Details, tests
 and the error of the length: `docs/barras.pdf`.
 
 ## Use
@@ -66,7 +69,7 @@ cutouts are downloaded and every galaxy measured.
 ```bash
 python scripts/build_input.py --list galaxies.csv --output outputs/sample/input.parquet
 python scripts/measure_bars.py --sample outputs/sample/input.parquet \
-    --output outputs/bars/bars.parquet --n-jobs 8
+    --output outputs/bars/bars.parquet --n-jobs 8            # --band z to measure in z
 python tools/plot_gallery.py --bars outputs/bars/bars.parquet --out-dir outputs/gallery/all --rotate
 ```
 
@@ -87,6 +90,7 @@ the galaxies that failed and why).
 
 | Column | Meaning |
 |---|---|
+| `survey`, `band` | images used (desi or sdss; r or z) |
 | `a_bar` | bar semi-length [″] |
 | `W_bar` | bar full width, bulge-free [″] |
 | `pa_bar` | bar PA [deg, north through east] |

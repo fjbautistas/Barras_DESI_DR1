@@ -19,7 +19,8 @@ Output, projected on the sky (as in Alonso et al. 2024):
             like contour widths such as the reference method's
     flag_eps, flag_end, flag_pa   quality flags (src/bar.py)
 and the same sizes on the disc plane (*_dep), with the disc ε and PA and the
-angle dphi between bar and disc. The disc window in μ_r assumes nanomaggies.
+angle dphi between bar and disc. The disc window (μ in nanomaggies) serves r and z
+alike: with S4G orientations it gives the same deprojection in both bands.
 The galaxy must be at the centre of the image, which must be sky-dominated
 at its edges.
 """
@@ -108,11 +109,11 @@ def measure_jpg(path, pixscale, z=None, **kw):
     return measure_image(img, pixscale, z, **kw)
 
 
-def measure_galaxy(row, cut_dir, survey="desi", a_min=A_MIN):
+def measure_galaxy(row, cut_dir, survey="desi", a_min=A_MIN, band="r"):
     """Bar of one row of a sample (TARGETID, RA, DEC, Z, SHAPE_R; Z may be NaN): Legacy cutout, then measure."""
     name, z = str(row.TARGETID), (row.Z if np.isfinite(row.Z) else None)
     size = int(cutout.cutout_size(row.SHAPE_R, survey))
-    paths = cutout.download(row.RA, row.DEC, size, cut_dir, name, survey)
+    paths = cutout.download(row.RA, row.DEC, size, cut_dir, name, survey, band)
     out = measure_image(fits.getdata(paths["fits"]), cutout.pixscale(survey), z, a_min,
-                        iso_path=cut_dir / f"{name}_{survey}_iso.ecsv")
-    return {"TARGETID": row.TARGETID, "Z": row.Z, "survey": survey, **out}
+                        iso_path=cut_dir / f"{name}_{survey}_{band}_iso.ecsv")
+    return {"TARGETID": row.TARGETID, "Z": row.Z, "survey": survey, "band": band, **out}

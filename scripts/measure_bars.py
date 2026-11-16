@@ -37,9 +37,9 @@ def _run(row, args):
             warnings.simplefilter("ignore")
             if args.download_only:
                 size = int(cutout.cutout_size(row.SHAPE_R, args.survey))
-                cutout.download(row.RA, row.DEC, size, args.cutouts, str(row.TARGETID), args.survey)
+                cutout.download(row.RA, row.DEC, size, args.cutouts, str(row.TARGETID), args.survey, args.band)
                 return {"TARGETID": row.TARGETID}
-            return measure_galaxy(row, args.cutouts, args.survey, args.a_min)
+            return measure_galaxy(row, args.cutouts, args.survey, args.a_min, args.band)
     except Exception as err:
         return str(row.TARGETID), repr(err)
 
@@ -50,6 +50,7 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--cutouts", type=Path, default=Path("outputs/cutouts"))
     p.add_argument("--survey", choices=["desi", "sdss"], default="desi")
+    p.add_argument("--band", choices=["r", "z"], default="r", help="r: deeper; z: follows the stellar mass")
     p.add_argument("--targetid", type=int, nargs="*", help="Only these galaxies")
     p.add_argument("--a-min", type=float, default=A_MIN)
     p.add_argument("--n-jobs", type=int, default=1)
@@ -75,7 +76,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_parquet(args.output, index=False)
     write_provenance(args.output, "measure_bars.py", {"sample": args.sample},
-                     {"survey": args.survey, "a_min_arcsec": args.a_min, "targetid": args.targetid,
+                     {"survey": args.survey, "band": args.band, "a_min_arcsec": args.a_min, "targetid": args.targetid,
                       "chunk": args.chunk, "n_chunks": args.n_chunks},
                      {"input": len(sample), "measured": len(rows), "failed": failed})
 

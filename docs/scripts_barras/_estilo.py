@@ -54,7 +54,7 @@ def galaxy(tid, survey="desi"):
     sky, _, mask, gal = isophotes.sky_and_mask(img)
     img = img - sky
     x0, y0 = isophotes.galaxy_centre(img, gal)
-    t = Table.read(CUT / f"{tid}_{survey}_iso.ecsv")
+    t = Table.read(CUT / f"{tid}_{survey}_r_iso.ecsv")
     a, eps, pa = bar.profiles(t, ps)
     b = bar.bar_from_profile(a, eps, pa, A_MIN)
     return dict(img=img, mask=mask, gal=gal, x0=x0, y0=y0, t=t, a=a, eps=eps, pa=pa, b=b, ps=ps)
